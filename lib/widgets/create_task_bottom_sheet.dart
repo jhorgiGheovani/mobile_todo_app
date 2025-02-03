@@ -1,9 +1,97 @@
 // Add this new widget class:
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/task.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
-class CreateTaskBottomSheet extends StatelessWidget {
-  const CreateTaskBottomSheet({super.key});
+class CreateTaskBottomSheet extends StatefulWidget {
+  final Task? task;
+  final Function(Task)? onUpdate;
+  final DateTime? initialDate;
+
+  const CreateTaskBottomSheet({
+    super.key,
+    this.task,
+    this.onUpdate,
+    this.initialDate,
+  });
+
+  @override
+  State<CreateTaskBottomSheet> createState() => _CreateTaskBottomSheetState();
+}
+
+class _CreateTaskBottomSheetState extends State<CreateTaskBottomSheet> {
+  late TextEditingController _titleController;
+  late TextEditingController _subtitleController;
+  late TextEditingController _timeController;
+  late String _category;
+  late DateTime _selectedDate;
+  TimeOfDay? _selectedTime;
+  final String? _userId = FirebaseAuth.instance.currentUser?.uid;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.task?.title ?? '');
+    _subtitleController =
+        TextEditingController(text: widget.task?.subtitle ?? '');
+    _timeController = TextEditingController(text: widget.task?.time ?? '');
+    _category = widget.task?.category ?? 'Work Event';
+    _selectedDate = widget.task?.date ?? widget.initialDate ?? DateTime.now();
+    if (widget.task?.time != null && widget.task!.time.isNotEmpty) {
+      try {
+        final timeParts = widget.task!.time.split(':');
+        if (timeParts.length == 2) {
+          _selectedTime = TimeOfDay(
+            hour: int.parse(timeParts[0]),
+            minute: int.parse(timeParts[1]),
+          );
+          _timeController.text = _formatTime(_selectedTime!);
+        }
+      } catch (e) {
+        print('Error parsing time: $e');
+      }
+    }
+  }
+
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(Duration(days: 365)),
+      lastDate: DateTime.now().add(Duration(days: 365)),
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
+  }
+
+  Future<void> _selectTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime ?? TimeOfDay.now(),
+    );
+    if (picked != null && picked != _selectedTime) {
+      setState(() {
+        _selectedTime = picked;
+        _timeController.text = _formatTime(picked);
+      });
+    }
+  }
+
+  String _formatTime(TimeOfDay time) {
+    final hours = time.hour.toString().padLeft(2, '0');
+    final minutes = time.minute.toString().padLeft(2, '0');
+    return '$hours:$minutes';
+  }
+
+  String _getFormattedDate() {
+    return DateFormat('MMM d, y').format(_selectedDate);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,6 +158,7 @@ class CreateTaskBottomSheet extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: TextField(
+                        controller: _titleController,
                         decoration: InputDecoration(
                           hintText: '  Title',
                           border: InputBorder.none,
@@ -98,25 +187,28 @@ class CreateTaskBottomSheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'From',
+                      'Date',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 12,
                       ),
                     ),
                     SizedBox(height: 8),
-                    Container(
-                      padding: EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.access_time, size: 20),
-                          SizedBox(width: 8),
-                          Text('Oct 8, 8.30 PM'),
-                        ],
+                    GestureDetector(
+                      onTap: () => _selectDate(context),
+                      child: Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.calendar_today, size: 20),
+                            SizedBox(width: 8),
+                            Text(_getFormattedDate()),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -128,25 +220,37 @@ class CreateTaskBottomSheet extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'To',
+                      'Time',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 12,
                       ),
                     ),
                     SizedBox(height: 8),
-                    Container(
-                      padding: EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.access_time, size: 20),
-                          SizedBox(width: 8),
-                          Text('Oct 8, 8.30 PM'),
-                        ],
+                    GestureDetector(
+                      onTap: () => _selectTime(context),
+                      child: Container(
+                        padding: EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.access_time, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              _selectedTime != null
+                                  ? _formatTime(_selectedTime!)
+                                  : 'Select time',
+                              style: TextStyle(
+                                color: _selectedTime != null
+                                    ? Colors.black
+                                    : Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -169,6 +273,7 @@ class CreateTaskBottomSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             child: TextField(
+              controller: _subtitleController,
               decoration: InputDecoration(
                 hintText: '  What you wanna do?',
                 border: InputBorder.none,
@@ -226,6 +331,7 @@ class CreateTaskBottomSheet extends StatelessWidget {
                   Expanded(
                     // Add this
                     child: TextField(
+                      controller: _timeController,
                       decoration: InputDecoration(
                         hintText: '  https://meet.google.com/cjc-gxhm-zi?...',
                         border: InputBorder.none,
@@ -244,6 +350,30 @@ class CreateTaskBottomSheet extends StatelessWidget {
 
           ElevatedButton(
             onPressed: () {
+              if (_userId == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Please sign in to create tasks')),
+                );
+                return;
+              }
+
+              final task = Task(
+                id: widget.task?.id ?? DateTime.now().toString(),
+                uid: _userId!,
+                title: _titleController.text,
+                subtitle: _subtitleController.text,
+                time: _selectedTime != null ? _formatTime(_selectedTime!) : '',
+                category: _category,
+                date: _selectedDate,
+              );
+
+              if (widget.task != null) {
+                widget.onUpdate?.call(task);
+              } else {
+                FirebaseFirestore.instance
+                    .collection('tasks')
+                    .add(task.toMap());
+              }
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(

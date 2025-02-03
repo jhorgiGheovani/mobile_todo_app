@@ -3,15 +3,89 @@ import 'package:flutter_svg/svg.dart';
 import 'package:mypersonalapp/widgets/create_task_bottom_sheet.dart';
 import 'package:percent_indicator/circular_percent_indicator.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../models/task.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
-class DashboardScreen extends StatelessWidget {
-  DashboardScreen({super.key});
+class DashboardScreen extends StatefulWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  DateTime _selectedDate = DateTime.now();
+
+  // Add these variables for calendar
+  CalendarFormat _calendarFormat = CalendarFormat.week;
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+
+  String? get _userId => _auth.currentUser?.uid;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDay = _focusedDay;
+    _selectedDate = _focusedDay;
+  }
+
+  Future<void> _createTask(Task task) async {
+    try {
+      if (_userId == null) throw Exception('User not authenticated');
+      final taskWithUser = task.copyWith(uid: _userId);
+      await _firestore.collection('tasks').add(taskWithUser.toMap());
+    } catch (e) {
+      print('Error creating task: $e');
+    }
+  }
+
+  Future<void> _updateTask(Task task) async {
+    try {
+      if (_userId == null) throw Exception('User not authenticated');
+      if (task.uid != _userId)
+        throw Exception('Not authorized to update this task');
+      await _firestore.collection('tasks').doc(task.id).update(task.toMap());
+    } catch (e) {
+      print('Error updating task: $e');
+    }
+  }
+
+  Future<void> _deleteTask(String taskId) async {
+    try {
+      if (_userId == null) throw Exception('User not authenticated');
+      final doc = await _firestore.collection('tasks').doc(taskId).get();
+      final task = Task.fromFirestore(doc);
+      if (task.uid != _userId)
+        throw Exception('Not authorized to delete this task');
+      await _firestore.collection('tasks').doc(taskId).delete();
+    } catch (e) {
+      print('Error deleting task: $e');
+    }
+  }
+
+  Future<void> _toggleTaskCompletion(Task task) async {
+    try {
+      if (_userId == null) throw Exception('User not authenticated');
+      if (task.uid != _userId)
+        throw Exception('Not authorized to update this task');
+      await _firestore.collection('tasks').doc(task.id).update({
+        'isCompleted': !task.isCompleted,
+      });
+    } catch (e) {
+      print('Error toggling task completion: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final statusBarHeight = MediaQuery.of(context).padding.top;
-    final bottomPadding = 20.0; // Space you want to leave at bottom
+    final bottomPadding = 20.0;
 
     // Calculate task list height
     final taskListHeight = screenHeight -
@@ -20,8 +94,10 @@ class DashboardScreen extends StatelessWidget {
         40 - // Top/Bottom padding (20 each)
         50 - // Progress task text + padding
         180 - // Task progress section height (approximate)
+        50 - // List Task text + padding
         100 - // Calendar height (approximate)
         bottomPadding; // Bottom spacing
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       body: SafeArea(
@@ -49,19 +125,34 @@ class DashboardScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        "Your Progress Task",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      Padding(
+                        padding: const EdgeInsets.only(left: 5),
+                        child: Text(
+                          "Your Progress Task",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                       SizedBox(height: 5),
                       _buildTaskProgress(context),
-                      SizedBox(height: 20),
+                      SizedBox(height: 5),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 5),
+                        child: Text(
+                          "List Task",
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 5),
                       _buildCalendar(),
-                      SizedBox(
-                          height: taskListHeight, child: _buildTasksList()),
+                      Expanded(
+                        child: _buildTasksList(),
+                      ),
                     ],
                   ),
                 ),
@@ -76,7 +167,9 @@ class DashboardScreen extends StatelessWidget {
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
-            builder: (context) => CreateTaskBottomSheet(),
+            builder: (context) => CreateTaskBottomSheet(
+              initialDate: _selectedDate,
+            ),
           );
         },
         backgroundColor: Colors.blue[600],
@@ -110,13 +203,25 @@ class DashboardScreen extends StatelessWidget {
                 backgroundColor: Colors.purple.shade100,
               ),
               SizedBox(width: 12),
-              Text(
-                'Jhorgi',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Jhorgi',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  Text(
+                    _getFormattedDate(), // Add date display
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -182,30 +287,114 @@ class DashboardScreen extends StatelessWidget {
         children: [
           _doneTaskHeader(),
           SizedBox(height: 5),
-          _buildTaskItem('📚 Read a Book'),
-          _buildTaskItem('👥 Weekly Meet'),
-          _buildTaskItem('🎨 3D Designing'),
-          _buildTaskItem('📝 Meeting With...'),
+          SizedBox(
+            // Add fixed height container
+            height: 96, // 24 height per item * 4 items
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _firestore
+                  .collection('tasks')
+                  .where('uid', isEqualTo: _userId)
+                  .where('isCompleted', isEqualTo: true)
+                  .orderBy('date', descending: true)
+                  .limit(4)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Text('Error: ${snapshot.error}');
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator());
+                }
+
+                final tasks = snapshot.data!.docs
+                    .map((doc) => Task.fromFirestore(doc))
+                    .toList();
+
+                if (tasks.isEmpty) {
+                  return Text('No completed tasks');
+                }
+
+                return Column(
+                  children: tasks.map((task) => _buildTaskItem(task)).toList(),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _doneTaskHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      mainAxisSize: MainAxisSize.max,
-      children: [
-        _circularListIcons(),
-        Text(
-          "6",
-          style: TextStyle(
-            fontSize: 20,
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
+  Widget _buildTaskItem(Task task) {
+    String emoji = _getEmojiForCategory(task.category);
+
+    return Container(
+      // Use Container instead of Padding for consistent height
+      height: 24, // Fixed height for each item
+      child: Row(
+        children: [
+          Text(
+            emoji,
+            style: TextStyle(fontSize: 13),
           ),
-        )
-      ],
+          SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              task.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getEmojiForCategory(String category) {
+    switch (category.toLowerCase()) {
+      case 'work event':
+        return '💼';
+      case 'sport':
+        return '🏃';
+      case 'meeting':
+        return '👥';
+      case 'study':
+        return '📚';
+      case 'design':
+        return '🎨';
+      default:
+        return '📝';
+    }
+  }
+
+  Widget _doneTaskHeader() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('tasks')
+          .where('uid', isEqualTo: _userId)
+          .where('isCompleted', isEqualTo: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        int completedCount = snapshot.hasData ? snapshot.data!.docs.length : 0;
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            _circularListIcons(),
+            Text(
+              "$completedCount",
+              style: TextStyle(
+                fontSize: 20,
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            )
+          ],
+        );
+      },
     );
   }
 
@@ -228,127 +417,111 @@ class DashboardScreen extends StatelessWidget {
   }
 
   Widget _circularProgress() {
-    // F2F5FF
     return Container(
-      // height: 150,
       padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       decoration: BoxDecoration(
         color: Color(0xFFF2F5FF),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularPercentIndicator(
-            radius: 50,
-            lineWidth: 22,
-            percent: 0.8,
-            center: Text(
-              "80%",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
+      child: StreamBuilder<QuerySnapshot>(
+        stream: _firestore
+            .collection('tasks')
+            .where('uid', isEqualTo: _userId)
+            .where('date',
+                isGreaterThanOrEqualTo: DateTime(
+                    _selectedDate.year, _selectedDate.month, _selectedDate.day))
+            .where('date',
+                isLessThan: DateTime(_selectedDate.year, _selectedDate.month,
+                    _selectedDate.day + 1))
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Text('Error loading progress');
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          }
+
+          final allTasks = snapshot.data?.docs ?? [];
+          final totalTasks = allTasks.length;
+          final completedTasks = allTasks.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return data['isCompleted'] == true;
+          }).length;
+
+          // Calculate percentage
+          final percentage =
+              totalTasks > 0 ? (completedTasks / totalTasks) : 0.0;
+
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularPercentIndicator(
+                radius: 50,
+                lineWidth: 22,
+                percent: percentage,
+                center: Text(
+                  "${(percentage * 100).toInt()}%",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                progressColor: Colors.lightBlue[300],
+                backgroundColor: Colors.pink[200]!,
               ),
-            ),
-            progressColor: Colors.lightBlue[300], // Lighter blue color
-            backgroundColor: Colors.pink[200]!, // Lighter pink color
-            // circularStrokeCap: CircularStrokeCap.round, // Rounded ends
-          ),
-          SizedBox(height: 3), // Add spacing
-          Text(
-            "My Progress Task",
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(
-            "6 out 10 task done",
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[600],
-            ),
-          ),
-        ],
+              SizedBox(height: 3),
+              Text(
+                "My Progress Task",
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                "$completedTasks out of $totalTasks task done",
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildTaskItem(String text) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 4),
-      child: Text(text),
-    );
-  }
-
-  // Widget _buildCalendar() {
-  //   return Column(
-  //     crossAxisAlignment: CrossAxisAlignment.start,
-  //     children: [
-  //       Text(
-  //         'List task',
-  //         style: TextStyle(
-  //           fontSize: 16,
-  //           fontWeight: FontWeight.bold,
-  //         ),
-  //       ),
-  //       SizedBox(height: 10),
-  //       Row(
-  //         mainAxisAlignment: MainAxisAlignment.spaceAround,
-  //         children: [
-  //           _buildCalendarDay('Mon', '1'),
-  //           _buildCalendarDay('Tue', '2'),
-  //           _buildCalendarDay('Wed', '3'),
-  //           _buildCalendarDay('Thu', '4', isSelected: true),
-  //           _buildCalendarDay('Fri', '5'),
-  //           _buildCalendarDay('Sat', '6'),
-  //         ],
-  //       ),
-  //     ],
-  //   );
-  // }
-
-  // Widget _buildCalendarDay(String day, String date, {bool isSelected = false}) {
-  //   return Column(
-  //     children: [
-  //       Text(
-  //         day,
-  //         style: TextStyle(
-  //           color: Colors.grey,
-  //           fontSize: 12,
-  //         ),
-  //       ),
-  //       SizedBox(height: 5),
-  //       Container(
-  //         padding: EdgeInsets.all(8),
-  //         decoration: BoxDecoration(
-  //           color: isSelected ? Colors.blue : null,
-  //           shape: BoxShape.circle,
-  //         ),
-  //         child: Text(
-  //           date,
-  //           style: TextStyle(
-  //             color: isSelected ? Colors.white : Colors.black,
-  //           ),
-  //         ),
-  //       ),
-  //     ],
-  //   );
-  // }
-
-  final DateTime _focusedDay = DateTime.now();
   Widget _buildCalendar() {
     return TableCalendar(
       firstDay: DateTime.now().subtract(Duration(days: 365)),
       lastDay: DateTime.now().add(Duration(days: 365)),
       focusedDay: _focusedDay,
-      calendarFormat: CalendarFormat.week,
-      startingDayOfWeek: StartingDayOfWeek.monday,
-      headerVisible: false,
-      daysOfWeekVisible: true,
-      sixWeekMonthsEnforced: false,
-      shouldFillViewport: false,
-
+      calendarFormat: _calendarFormat,
+      selectedDayPredicate: (day) {
+        return isSameDay(_selectedDay, day);
+      },
+      onDaySelected: (selectedDay, focusedDay) {
+        if (!isSameDay(_selectedDay, selectedDay)) {
+          setState(() {
+            _selectedDay = selectedDay;
+            _focusedDay = focusedDay;
+            _selectedDate = selectedDay; // Update _selectedDate to filter tasks
+          });
+        }
+      },
+      onFormatChanged: (format) {
+        if (_calendarFormat != format) {
+          setState(() {
+            _calendarFormat = format;
+          });
+        }
+      },
+      onPageChanged: (focusedDay) {
+        _focusedDay = focusedDay;
+      },
+      // Customize calendar style
       calendarStyle: CalendarStyle(
         outsideDaysVisible: false,
         weekendTextStyle: TextStyle(color: Colors.black87),
@@ -367,7 +540,8 @@ class DashboardScreen extends StatelessWidget {
           fontWeight: FontWeight.bold,
         ),
       ),
-
+      // Customize header style
+      headerVisible: false, // Hide default header since we have our own
       // Customize days of week style
       daysOfWeekStyle: DaysOfWeekStyle(
         weekdayStyle: TextStyle(
@@ -379,70 +553,89 @@ class DashboardScreen extends StatelessWidget {
           fontSize: 12,
         ),
       ),
-
-      // Customize available gestures
+      startingDayOfWeek: StartingDayOfWeek.monday,
+      // Enable only horizontal swipe
       availableGestures: AvailableGestures.horizontalSwipe,
-
-      // Selected day callback
-      selectedDayPredicate: (day) {
-        return isSameDay(day, _focusedDay);
-      },
-
-      // Optional: Add these if you want to handle day selection
-      onDaySelected: (selectedDay, focusedDay) {
-        // Handle day selection
-      },
-
-      // Optional: Add this if you want to handle page changes
-      onPageChanged: (focusedDay) {
-        // Handle page change
-      },
     );
   }
 
+  // Optional: Add a method to format the selected date for display
+  String _getFormattedDate() {
+    return DateFormat('MMMM d, y').format(_selectedDate);
+  }
+
   Widget _buildTasksList() {
-    return ListView(
-      children: [
-        _buildTaskCard(
-          'Work Event',
-          'Townhall meeting online',
-          '7:00 am - 9:00 am',
-          Colors.pink[50]!,
-        ),
-        SizedBox(height: 10),
-        _buildTaskCard(
-          'Work Event',
-          'Discussing about project',
-          '7:00 am - 9:00 am',
-          Colors.blue[50]!,
-        ),
-        SizedBox(height: 10),
-        _buildTaskCard(
-          'Sport',
-          'Running with my friend',
-          '',
-          Colors.orange[50]!,
-        ),
-        SizedBox(height: 10),
-        _buildTaskCard(
-          'Sport',
-          'Running with my friend',
-          '',
-          Colors.orange[50]!,
-        ),
-        SizedBox(height: 10),
-        _buildTaskCard(
-          'Sport',
-          'Running with my friend',
-          '',
-          Colors.orange[50]!,
-        ),
-      ],
+    if (_userId == null) {
+      return Center(child: Text('Please sign in to view tasks'));
+    }
+
+    // Create DateTime objects for start and end of the selected date
+    final startOfDay =
+        DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    final endOfDay = DateTime(
+        _selectedDate.year, _selectedDate.month, _selectedDate.day, 23, 59, 59);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('tasks')
+          .where('uid', isEqualTo: _userId)
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+
+        final tasks =
+            snapshot.data!.docs.map((doc) => Task.fromFirestore(doc)).toList();
+
+        if (tasks.isEmpty) {
+          return Center(child: Text('No tasks for today'));
+        }
+
+        return ListView.separated(
+          itemCount: tasks.length,
+          separatorBuilder: (context, index) => SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            final task = tasks[index];
+            return Dismissible(
+              key: Key(task.id),
+              background: Container(
+                color: Colors.red,
+                alignment: Alignment.centerRight,
+                padding: EdgeInsets.only(right: 20),
+                child: Icon(Icons.delete, color: Colors.white),
+              ),
+              onDismissed: (direction) => _deleteTask(task.id),
+              child: GestureDetector(
+                onTap: () => _showEditTaskDialog(task),
+                child: _buildTaskCard(
+                  task.category,
+                  task.subtitle,
+                  task.time,
+                  _getCategoryColor(task.category),
+                  task: task,
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
   Widget _buildTaskCard(
-      String title, String subtitle, String time, Color color) {
+    String title,
+    String subtitle,
+    String time,
+    Color color, {
+    required Task task,
+  }) {
     return Container(
       padding: EdgeInsets.all(15),
       decoration: BoxDecoration(
@@ -452,12 +645,33 @@ class DashboardScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 12,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => _toggleTaskCompletion(task),
+                child: Container(
+                  padding: EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: task.isCompleted ? Colors.green : Colors.transparent,
+                    border: Border.all(
+                      color: task.isCompleted ? Colors.green : Colors.grey,
+                    ),
+                  ),
+                  child: task.isCompleted
+                      ? Icon(Icons.check, size: 12, color: Colors.white)
+                      : SizedBox(width: 12, height: 12),
+                ),
+              ),
+            ],
           ),
           SizedBox(height: 5),
           Text(
@@ -478,6 +692,29 @@ class DashboardScreen extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'work event':
+        return Colors.pink[50]!;
+      case 'sport':
+        return Colors.orange[50]!;
+      default:
+        return Colors.blue[50]!;
+    }
+  }
+
+  void _showEditTaskDialog(Task task) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CreateTaskBottomSheet(
+        task: task,
+        onUpdate: _updateTask,
       ),
     );
   }

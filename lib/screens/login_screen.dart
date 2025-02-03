@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mypersonalapp/screens/dashboard_screen.dart';
 import 'package:mypersonalapp/screens/home_screen.dart';
 import '../services/auth_service.dart';
 
@@ -224,7 +225,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          MaterialPageRoute(builder: (context) => const DashboardScreen()),
         );
       }
     } catch (e) {
