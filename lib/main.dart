@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mypersonalapp/firebase_options.dart';
+import 'package:mypersonalapp/screens/dashboard_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'screens/home_screen.dart';
@@ -29,23 +30,23 @@ class MainApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Todo Calendar',
-        theme: ThemeData.dark().copyWith(
-          scaffoldBackgroundColor: Colors.black,
-          colorScheme: const ColorScheme.dark().copyWith(
-            primary: Colors.blue,
-            surface: const Color(0xFF2A2A2A),
-          ),
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.white,
-            elevation: 0,
-            iconTheme: IconThemeData(color: Colors.black),
-            titleTextStyle: TextStyle(
-              color: Colors.black,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
+        // theme: ThemeData.dark().copyWith(
+        //   scaffoldBackgroundColor: Colors.black,
+        //   colorScheme: const ColorScheme.dark().copyWith(
+        //     primary: Colors.blue,
+        //     surface: const Color(0xFF2A2A2A),
+        //   ),
+        //   appBarTheme: const AppBarTheme(
+        //     backgroundColor: Colors.white,
+        //     elevation: 0,
+        //     iconTheme: IconThemeData(color: Colors.black),
+        //     titleTextStyle: TextStyle(
+        //       color: Colors.black,
+        //       fontSize: 20,
+        //       fontWeight: FontWeight.bold,
+        //     ),
+        //   ),
+        // ),
         home: FutureBuilder(
           future: Firebase.initializeApp(),
           builder: (context, snapshot) {
@@ -60,7 +61,7 @@ class MainApp extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
                 return authSnapshot.hasData
-                    ? const HomeScreen()
+                    ? DashboardScreen()
                     : const LoginScreen();
               },
             );
